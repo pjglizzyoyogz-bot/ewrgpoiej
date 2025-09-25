@@ -355,32 +355,38 @@ end
 function smartServerHop()
     print("🔍 Searching for available servers...")
     local attempts = 0
-    local maxAttempts = 10
+    local maxAttempts = 5  -- Reduced attempts to not get stuck
     
     while attempts < maxAttempts do
         attempts = attempts + 1
         print("Server search attempt " .. attempts .. "/" .. maxAttempts)
         
-        local success = pcall(function()
-            if TPReturner() then
-                return true
-            end
-            if foundAnything ~= "" then
-                return TPReturner()
-            end
-            return false
+        local success, result = pcall(function()
+            return TPReturner()
         end)
         
-        if success then
+        if success and result then
             print("✅ Server hop initiated successfully!")
-            return
+            return true
         end
         
-        print("❌ No suitable server found, retrying in 3 seconds...")
-        wait(3)
+        -- Try with next page cursor if available
+        if foundAnything ~= "" then
+            local success2, result2 = pcall(function()
+                return TPReturner()
+            end)
+            if success2 and result2 then
+                print("✅ Server hop initiated successfully!")
+                return true
+            end
+        end
+        
+        print("❌ No suitable server found, retrying in 2 seconds...")
+        wait(2)
     end
     
-    print("⚠️ Could not find suitable server after " .. maxAttempts .. " attempts, continuing scan...")
+    print("⚠️ Could not find suitable server after " .. maxAttempts .. " attempts")
+    return false
 end
 
 -- Main function to scan all plots
@@ -450,14 +456,20 @@ local function scanAllPlots()
         
         
         -- Smart server hop
-        smartServerHop()
+        local hopSuccess = smartServerHop()
+        if not hopSuccess then
+            print("⚠️ Server hop failed, continuing scan in current server...")
+        end
     else
         print("No brainrots found, server hopping...")
         wait(2)
         
         
         -- Smart server hop
-        smartServerHop()
+        local hopSuccess = smartServerHop()
+        if not hopSuccess then
+            print("⚠️ Server hop failed, continuing scan in current server...")
+        end
     end
 end
 
@@ -469,9 +481,16 @@ local function continuousScanner()
             warn("Error during scan: " .. tostring(error))
             print("Retrying in 5 seconds...")
             wait(5)
+        else
+            print("✅ Scan completed successfully!")
         end
-        -- Small delay before next iteration (in case teleport fails)
-        wait(2)
+        
+        -- Always wait before next scan (whether teleport happened or not)
+        print("⏳ Waiting 5 seconds before next scan...")
+        wait(5)
+        
+        -- Reset cursor for fresh server search
+        foundAnything = ""
     end
 end
 
