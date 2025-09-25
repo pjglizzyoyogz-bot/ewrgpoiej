@@ -4,7 +4,60 @@ local TeleportService = game:GetService("TeleportService")
 local Players = game:GetService("Players")
 
 -- HTTP request function (compatible with most executors)
-local request = syn and syn.request or http and http.request or http_request or fluxus and fluxus.request
+local request = syn and syn.request or ht    local success, error = pcall(function()
+        local attempts = 0
+        local maxAttempts = 50  -- Try many servers before giving up
+        local serversChecked = {}
+        
+        while attempts < maxAttempts do
+            attempts = attempts + 1
+            print("🔍 Server search attempt " .. attempts .. "/" .. maxAttempts)
+            
+            local ServerList = ListServers(Next)
+            if not ServerList or not ServerList.data or #ServerList.data == 0 then
+                print("❌ No servers in list, trying next page...")
+                Next = ServerList and ServerList.nextPageCursor or nil
+                wait(2)
+                continue
+            end
+            
+            -- Try multiple servers from the list
+            for i = 1, math.min(10, #ServerList.data) do  -- Check up to 10 servers per page
+                local serverIndex = math.random(1, #ServerList.data)
+                Server = ServerList.data[serverIndex]
+                
+                if Server and not serversChecked[Server.id] then
+                    serversChecked[Server.id] = true
+                    print("🔍 Checking server: " .. Server.id .. " (" .. Server.playing .. "/" .. Server.maxPlayers .. " players)")
+                    
+                    if Server.playing < Server.maxPlayers and Server.id ~= game.JobId then
+                        print("✅ Found available server!")
+                        print("🚀 Teleporting to server: " .. Server.id .. " (" .. Server.playing .. "/" .. Server.maxPlayers .. " players)")
+                        TeleportService:TeleportToPlaceInstance(game.PlaceId, Server.id, Players.LocalPlayer)
+                        return true
+                    else
+                        if Server.id == game.JobId then
+                            print("❌ Same server, skipping...")
+                        else
+                            print("❌ Server full (" .. Server.playing .. "/" .. Server.maxPlayers .. "), trying next...")
+                        end
+                    end
+                end
+            end
+            
+            -- Move to next page
+            Next = ServerList.nextPageCursor
+            if not Next then
+                print("🔄 Reached end of server list, resetting search...")
+                Next = nil
+            end
+            
+            wait(1) -- Small delay between page requests
+        end
+        
+        print("⚠️ Exhausted all server search attempts")
+        return false
+    end)est or http_request or fluxus and fluxus.request
 
 if not request then
     error("No HTTP request function found! Make sure you're using a compatible executor.")
@@ -290,8 +343,30 @@ local Servers = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/server
 local Server, Next = nil, nil
 
 local function ListServers(cursor)
-    local Raw = game:HttpGet(Servers .. ((cursor and "&cursor=" .. cursor) or ""))
-    return HttpService:JSONDecode(Raw)
+    local attempts = 0
+    local maxAttempts = 3
+    
+    while attempts < maxAttempts do
+        attempts = attempts + 1
+        local success, result = pcall(function()
+            local Raw = game:HttpGet(Servers .. ((cursor and "&cursor=" .. cursor) or ""))
+            return HttpService:JSONDecode(Raw)
+        end)
+        
+        if success then
+            return result
+        else
+            warn("⚠️ Server list request failed (attempt " .. attempts .. "/" .. maxAttempts .. "): " .. tostring(result))
+            if string.find(tostring(result):lower(), "429") or string.find(tostring(result):lower(), "too many") then
+                print("🕐 Rate limited! Waiting 15 seconds before retry...")
+                wait(15)
+            else
+                wait(3)
+            end
+        end
+    end
+    
+    error("Failed to get server list after " .. maxAttempts .. " attempts")
 end
 
 -- Function to initiate server hop
@@ -402,7 +477,6 @@ local function scanAllPlots()
         wait(2)
         
         -- Queue script to auto-execute after server hop
-
         -- Smart server hop
         local hopSuccess = smartServerHop()
         if not hopSuccess then
@@ -424,8 +498,8 @@ local function continuousScanner()
         end
         
         -- Always wait before next scan (whether teleport happened or not)
-        print("⏳ Waiting 5 seconds before next scan...")
-        wait(5)
+        print("⏳ Waiting 10 seconds before next scan to avoid rate limits...")
+        wait(10)
         
         -- Reset server variables for fresh search
         Server, Next = nil, nil
