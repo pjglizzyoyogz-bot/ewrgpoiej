@@ -1,11 +1,10 @@
--- Brainrot Detection and Discord Webhook Script (Client-side)
+-- Brainrot Detection and Discord Webhook Script (Client-side) with Enhanced Server Hopping
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
 local Players = game:GetService("Players")
 
 -- HTTP request function (compatible with most executors)
 local request = syn and syn.request or http and http.request or http_request or fluxus and fluxus.request
-
 if not request then
     error("No HTTP request function found! Make sure you're using a compatible executor.")
 end
@@ -42,8 +41,8 @@ local function parsePrice(priceStr)
     
     -- Remove $ and /s at the end
     local cleanPrice = priceStr:gsub("^%$", ""):gsub("/s$", "")
-    
     local multiplier = 1
+    
     if cleanPrice:find("K$") then
         multiplier = 1000
         cleanPrice = cleanPrice:gsub("K$", "")
@@ -95,7 +94,7 @@ local function sendCategoryEmbed(webhookUrl, category, brainrots)
     -- Create title based on category
     local titles = {
         highValue = "🧠 BRAINROTS DETECTED (" .. #brainrots .. " Found)",
-        secretLowValue = "🧠 SECRET BRAINROTS DETECTED (" .. #brainrots .. " Found)", 
+        secretLowValue = "🧠 SECRET BRAINROTS DETECTED (" .. #brainrots .. " Found)",
         mediumValue = "🧠 BRAINROTS DETECTED (" .. #brainrots .. " Found)"
     }
     
@@ -116,20 +115,16 @@ local function sendCategoryEmbed(webhookUrl, category, brainrots)
     -- Add each brainrot
     for i, brainrot in ipairs(brainrots) do
         local rarityEmoji = brainrot.rarity == "Secret" and "💎" or 
-                           brainrot.rarity == "Legendary" and "🔥" or
+                           brainrot.rarity == "Legendary" and "🔥" or 
                            brainrot.rarity == "Epic" and "⚡" or "🔸"
         
         -- Format name with or without mutation
         local nameDisplay = brainrot.mutation == "Gold" and 
-            string.format("**%s**", brainrot.displayName) or
-            string.format("**%s (%s)**", brainrot.displayName, brainrot.mutation)
+                           string.format("**%s**", brainrot.displayName) or 
+                           string.format("**%s (%s)**", brainrot.displayName, brainrot.mutation)
         
-        local petInfo = string.format("%s %s **%s** ➜ **%s**\nOwner: %s", 
-            rarityEmoji,
-            nameDisplay,
-            brainrot.generation,
-            brainrot.rarity,
-            brainrot.owner
+        local petInfo = string.format("%s %s **%s** ➜ **%s**\nOwner: %s",
+            rarityEmoji, nameDisplay, brainrot.generation, brainrot.rarity, brainrot.owner
         )
         
         table.insert(fields, {
@@ -147,7 +142,7 @@ local function sendCategoryEmbed(webhookUrl, category, brainrots)
     })
     
     table.insert(fields, {
-        name = "📱 Job ID (Mobile)", 
+        name = "📱 Job ID (Mobile)",
         value = "```\n" .. jobId .. "\n```",
         inline = true
     })
@@ -242,8 +237,8 @@ local function checkAnimal(animalOverhead, plotId, podiumNumber, plot)
     local generationLabel = animalOverhead:FindFirstChild("Generation")
     local rarity = animalOverhead:FindFirstChild("Rarity")
     
-    if not (displayName and mutation and generationLabel and rarity) then 
-        return 
+    if not (displayName and mutation and generationLabel and rarity) then
+        return
     end
     
     local displayNameText = displayName.Text
@@ -268,22 +263,19 @@ local function checkAnimal(animalOverhead, plotId, podiumNumber, plot)
     }
     
     -- Check conditions and add to appropriate category
-    if priceValue >= 10000000 and priceValue < 100000000 then
-        -- 10M/s to 100M/s
+    if priceValue >= 10000000 and priceValue < 100000000 then -- 10M/s to 100M/s
         table.insert(detectedBrainrots.highValue, brainrotData)
         print("High value brainrot detected: " .. displayNameText .. " - " .. generationText)
-    elseif rarityText == "Secret" and priceValue < 1000000 then
-        -- Secret rarity less than 1M/s
+    elseif rarityText == "Secret" and priceValue < 1000000 then -- Secret rarity less than 1M/s
         table.insert(detectedBrainrots.secretLowValue, brainrotData)
         print("Secret low value brainrot detected: " .. displayNameText .. " - " .. generationText)
-    elseif priceValue >= 1000000 and priceValue < 10000000 then
-        -- 1M/s to 10M/s
+    elseif priceValue >= 1000000 and priceValue < 10000000 then -- 1M/s to 10M/s
         table.insert(detectedBrainrots.mediumValue, brainrotData)
         print("Medium value brainrot detected: " .. displayNameText .. " - " .. generationText)
     end
 end
 
--- Comprehensive Server Hopping System
+-- Enhanced Server Hopping System
 local Servers = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
 local Server, Next = nil, nil
 
@@ -314,59 +306,83 @@ local function ListServers(cursor)
     error("Failed to get server list after " .. maxAttempts .. " attempts")
 end
 
--- Function to initiate comprehensive server hop
-function smartServerHop()
-    print("Searching for available servers...")
+-- Enhanced server hopping function
+local function smartServerHop()
+    print("🔍 Searching for available servers...")
     
     local success, result = pcall(function()
         local page = 1
-        local maxPages = 20
-        local found = false
+        local maxPages = 50  -- Increased from 20 to search more thoroughly
+        local serversChecked = 0
+        local fullServers = 0
         
-        while page <= maxPages and not found do
-            print("Searching page " .. page .. "...")
-            
+        while page <= maxPages do
+            print("📋 Searching page " .. page .. "...")
             local serverData = ListServers(Next)
+            
             if not serverData or not serverData.data or #serverData.data == 0 then
-                print("No more servers found")
+                print("📄 No more servers found on page " .. page)
                 break
             end
             
             -- Check each server on this page
             for i, server in pairs(serverData.data) do
-                if server.id ~= game.JobId and server.playing < server.maxPlayers then
-                    print("Found available server: " .. server.id .. " (" .. server.playing .. "/" .. server.maxPlayers .. " players)")
-                    TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, Players.LocalPlayer)
-                    found = true
-                    return true
+                serversChecked = serversChecked + 1
+                
+                -- Skip current server
+                if server.id ~= game.JobId then
+                    local availableSlots = server.maxPlayers - server.playing
+                    
+                    if availableSlots > 0 then
+                        print("✅ Found available server: " .. server.id .. " (" .. server.playing .. "/" .. server.maxPlayers .. " players, " .. availableSlots .. " slots)")
+                        TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, Players.LocalPlayer)
+                        return true
+                    else
+                        fullServers = fullServers + 1
+                        if serversChecked % 10 == 0 then  -- Progress update every 10 servers
+                            print("🔄 Progress: Checked " .. serversChecked .. " servers, " .. fullServers .. " full")
+                        end
+                    end
                 end
             end
             
             -- Move to next page
             Next = serverData.nextPageCursor
             if not Next then
-                print("Reached end of server list")
+                print("📑 Reached end of server list after " .. page .. " pages")
                 break
             end
             
             page = page + 1
-            wait(1) -- Brief delay between pages to avoid rate limiting
+            wait(0.5)  -- Reduced delay but still avoid rate limiting
         end
         
-        if not found then
-            print("No available servers found after searching " .. page .. " pages")
+        print("⚠️ Search complete: Checked " .. serversChecked .. " servers, " .. fullServers .. " were full")
+        
+        -- If we get here, no available servers were found
+        if fullServers > 0 then
+            print("🎯 All servers appear to be full! Implementing fallback strategy...")
+            return "all_full"
+        else
+            print("❌ No servers found at all")
             return false
         end
     end)
     
-    if success and result then
-        print("Server hop initiated successfully!")
-        return true
+    if success then
+        if result == true then
+            print("🚀 Server hop initiated successfully!")
+            return true
+        elseif result == "all_full" then
+            print("🔄 All servers full, implementing retry strategy...")
+            return "retry"
+        else
+            print("❌ No suitable servers found")
+            return false
+        end
     else
-        warn("Server hop failed: " .. tostring(result or "Unknown error"))
-        -- Reset cursor and try again after delay
+        warn("💥 Server hop failed: " .. tostring(result or "Unknown error"))
         Next = nil
-        wait(5)
         return false
     end
 end
@@ -417,62 +433,82 @@ local function scanAllPlots()
     end
     
     print("Brainrot scan completed!")
-    
-    -- Check if any brainrots were found
-    local totalFound = #detectedBrainrots.highValue + #detectedBrainrots.secretLowValue + #detectedBrainrots.mediumValue
-    
-    if totalFound > 0 then
-        -- Send category embeds
-        print("Sending Discord embeds...")
-        sendCategoryEmbed(webhooks.highValue, "highValue", detectedBrainrots.highValue)
-        wait(1) -- Small delay between embeds
-        sendCategoryEmbed(webhooks.secretLowValue, "secretLowValue", detectedBrainrots.secretLowValue)
-        wait(1)
-        sendCategoryEmbed(webhooks.mediumValue, "mediumValue", detectedBrainrots.mediumValue)
-        
-        print("All embeds sent!")
-        print("Found " .. totalFound .. " brainrots! Server hopping...")
-        
-        -- Wait a bit before server hopping
-        wait(3)
-        
-        -- Queue script to auto-execute after server hop
-
-        
-        -- Smart server hop
-        local hopSuccess = smartServerHop()
-        if not hopSuccess then
-            print("⚠️ Server hop failed, continuing scan in current server...")
-        end
-    else
-        print("No brainrots found, server hopping...")
-        wait(2)
-        
-        -- Queue script to auto-execute after server hop
-
-        -- Smart server hop
-        local hopSuccess = smartServerHop()
-        if not hopSuccess then
-            print("⚠️ Server hop failed, continuing scan in current server...")
-        end
-    end
 end
 
--- Function to continuously run the scanner with server hopping
+-- Enhanced continuous scanner with better full server handling
 local function continuousScanner()
+    local consecutiveFullServerAttempts = 0
+    local maxConsecutiveAttempts = 3
+    
     while true do
         local success, error = pcall(scanAllPlots)
         if not success then
-            warn("Error during scan: " .. tostring(error))
-            print("Retrying in 5 seconds...")
+            warn("💥 Error during scan: " .. tostring(error))
+            print("⏳ Retrying in 5 seconds...")
             wait(5)
         else
             print("✅ Scan completed successfully!")
         end
         
-        -- Always wait before next scan (whether teleport happened or not)
-        print("⏳ Waiting 10 seconds before next scan to avoid rate limits...")
-        wait(10)
+        -- Check if any brainrots were found
+        local totalFound = #detectedBrainrots.highValue + #detectedBrainrots.secretLowValue + #detectedBrainrots.mediumValue
+        
+        if totalFound > 0 then
+            -- Send embeds
+            print("📤 Sending Discord embeds...")
+            sendCategoryEmbed(webhooks.highValue, "highValue", detectedBrainrots.highValue)
+            wait(1)
+            sendCategoryEmbed(webhooks.secretLowValue, "secretLowValue", detectedBrainrots.secretLowValue)
+            wait(1)
+            sendCategoryEmbed(webhooks.mediumValue, "mediumValue", detectedBrainrots.mediumValue)
+            print("📬 All embeds sent!")
+            print("🎉 Found " .. totalFound .. " brainrots! Server hopping...")
+            wait(3)
+        else
+            print("🔍 No brainrots found, server hopping...")
+            wait(2)
+        end
+        
+        -- Queue script for auto-execution
+        queue_on_teleport([[
+
+        
+        -- Attempt server hop with enhanced handling
+        local hopResult = smartServerHop()
+        
+        if hopResult == true then
+            print("🎯 Successfully hopping to new server!")
+            consecutiveFullServerAttempts = 0
+            break  -- Exit loop since we're teleporting
+        elseif hopResult == "retry" then
+            consecutiveFullServerAttempts = consecutiveFullServerAttempts + 1
+            print("🔄 Attempt " .. consecutiveFullServerAttempts .. "/" .. maxConsecutiveAttempts .. " - All servers full")
+            
+            if consecutiveFullServerAttempts >= maxConsecutiveAttempts then
+                print("⏰ All servers consistently full. Waiting longer before retry...")
+                print("🎮 Game has " .. (#Players:GetPlayers()) .. " players - very popular right now!")
+                
+                -- Progressive wait times when servers are consistently full
+                local waitTime = math.min(30 + (consecutiveFullServerAttempts * 10), 120)  -- Max 2 minutes
+                print("⌛ Waiting " .. waitTime .. " seconds for servers to free up...")
+                wait(waitTime)
+                
+                -- Reset counter after long wait
+                if consecutiveFullServerAttempts >= 5 then
+                    consecutiveFullServerAttempts = 0
+                    print("🔄 Resetting search parameters...")
+                    Server, Next = nil, nil
+                end
+            else
+                print("⏳ Short wait before retry...")
+                wait(10 + math.random(5, 15))  -- Random delay to avoid synchronized attempts
+            end
+        else
+            consecutiveFullServerAttempts = 0
+            print("⚠️ Server hop failed, continuing scan in current server...")
+            print("⏳ Waiting 10 seconds before next scan...")
+            wait(10)
+        end
         
         -- Reset server variables for fresh search
         Server, Next = nil, nil
