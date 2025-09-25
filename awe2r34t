@@ -285,6 +285,33 @@ local function checkAnimal(animalOverhead, plotId, podiumNumber, plot)
     end
 end
 
+-- Track current server to avoid rejoining
+local currentJobId = game.JobId
+
+-- Function to get a different server
+local function getRandomServer()
+    local HttpService = game:GetService("HttpService")
+    local success, result = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/109983668079237/servers/Public?sortOrder=Asc&limit=100"))
+    end)
+    
+    if success and result and result.data then
+        -- Filter out current server and full servers
+        local availableServers = {}
+        for _, server in pairs(result.data) do
+            if server.id ~= currentJobId and server.playing < server.maxPlayers then
+                table.insert(availableServers, server.id)
+            end
+        end
+        
+        if #availableServers > 0 then
+            return availableServers[math.random(1, #availableServers)]
+        end
+    end
+    
+    return nil -- Fallback to regular teleport if no servers found
+end
+
 -- Main function to scan all plots
 local function scanAllPlots()
     local plots = workspace:FindFirstChild("Plots")
@@ -351,20 +378,25 @@ local function scanAllPlots()
         wait(3)
         
         -- Queue script to auto-execute after server hop
-        queue_on_teleport([[
-            wait(5)
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/pjglizzyoyogz-bot/ewrgpoiej/refs/heads/main/awe2r34t"))()
-        ]])
-        
         -- Server hop with retry logic
         local attempts = 0
         local maxAttempts = 10
         repeat
             attempts = attempts + 1
             print("Server hop attempt " .. attempts .. "/" .. maxAttempts)
+            
+            -- Try to get a different server first
+            local targetServerId = getRandomServer()
             local success, error = pcall(function()
-                TeleportService:Teleport(109983668079237, Players.LocalPlayer)
+                if targetServerId then
+                    print("Teleporting to specific server: " .. targetServerId)
+                    TeleportService:TeleportToPlaceInstance(109983668079237, targetServerId, Players.LocalPlayer)
+                else
+                    print("No specific server found, using regular teleport")
+                    TeleportService:Teleport(109983668079237, Players.LocalPlayer)
+                end
             end)
+            
             if not success then
                 warn("Teleport failed: " .. tostring(error))
                 if attempts < maxAttempts then
@@ -384,21 +416,25 @@ local function scanAllPlots()
         print("No brainrots found, server hopping...")
         wait(2)
         
-        -- Queue script to auto-execute after server hop
-        queue_on_teleport([[
-            wait(5)
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/pjglizzyoyogz-bot/ewrgpoiej/refs/heads/main/awe2r34t"))()
-        ]])
-        
         -- Server hop with retry logic
         local attempts = 0
         local maxAttempts = 10
         repeat
             attempts = attempts + 1
             print("Server hop attempt " .. attempts .. "/" .. maxAttempts)
+            
+            -- Try to get a different server first
+            local targetServerId = getRandomServer()
             local success, error = pcall(function()
-                TeleportService:Teleport(109983668079237, Players.LocalPlayer)
+                if targetServerId then
+                    print("Teleporting to specific server: " .. targetServerId)
+                    TeleportService:TeleportToPlaceInstance(109983668079237, targetServerId, Players.LocalPlayer)
+                else
+                    print("No specific server found, using regular teleport")
+                    TeleportService:Teleport(109983668079237, Players.LocalPlayer)
+                end
             end)
+            
             if not success then
                 warn("Teleport failed: " .. tostring(error))
                 if attempts < maxAttempts then
