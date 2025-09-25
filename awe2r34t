@@ -1,222 +1,317 @@
 -- Brainrot Detection and Discord Webhook Script (Client-side)
-local HttpService = game:GetService('HttpService')
-local TeleportService = game:GetService('TeleportService')
-local Players = game:GetService('Players')
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
 
 -- HTTP request function (compatible with most executors)
-local request = syn and syn.request
-    or http and http.request
-    or http_request
-    or fluxus and fluxus.request
+local request = syn and syn.request or ht    local success, error = pcall(function()
+        local attempts = 0
+        local maxAttempts = 50  -- Try many servers before giving up
+        local serversChecked = {}
+        
+        while attempts < maxAttempts do
+            attempts = attempts + 1
+            print("🔍 Server search attempt " .. attempts .. "/" .. maxAttempts)
+            
+            local ServerList = ListServers(Next)
+            if not ServerList or not ServerList.data or #ServerList.data == 0 then
+                print("❌ No servers in list, trying next page...")
+                Next = ServerList and ServerList.nextPageCursor or nil
+                wait(2)
+                continue
+            end
+            
+            -- Try multiple servers from the list
+            for i = 1, math.min(10, #ServerList.data) do  -- Check up to 10 servers per page
+                local serverIndex = math.random(1, #ServerList.data)
+                Server = ServerList.data[serverIndex]
+                
+                if Server and not serversChecked[Server.id] then
+                    serversChecked[Server.id] = true
+                    print("🔍 Checking server: " .. Server.id .. " (" .. Server.playing .. "/" .. Server.maxPlayers .. " players)")
+                    
+                    if Server.playing < Server.maxPlayers and Server.id ~= game.JobId then
+                        print("✅ Found available server!")
+                        print("🚀 Teleporting to server: " .. Server.id .. " (" .. Server.playing .. "/" .. Server.maxPlayers .. " players)")
+                        TeleportService:TeleportToPlaceInstance(game.PlaceId, Server.id, Players.LocalPlayer)
+                        return true
+                    else
+                        if Server.id == game.JobId then
+                            print("❌ Same server, skipping...")
+                        else
+                            print("❌ Server full (" .. Server.playing .. "/" .. Server.maxPlayers .. "), trying next...")
+                        end
+                    end
+                end
+            end
+            
+            -- Move to next page
+            Next = ServerList.nextPageCursor
+            if not Next then
+                print("🔄 Reached end of server list, resetting search...")
+                Next = nil
+            end
+            
+            wait(1) -- Small delay between page requests
+        end
+        
+        print("⚠️ Exhausted all server search attempts")
+        return false
+    end)est or http_request or fluxus and fluxus.request
+
 if not request then
-    error(
-        "No HTTP request function found! Make sure you're using a compatible executor."
-    )
+    error("No HTTP request function found! Make sure you're using a compatible executor.")
 end
 
 -- Discord Webhook URLs
 local webhooks = {
-    highValue = 'WEBHOOK1',
-    secretLowValue = 'WEBHOOK2',
-    mediumValue = 'WEBHOOK3',
+    highValue = "https://discord.com/api/webhooks/1420571524515102731/nhtroygawwGSM2U6ZmH2fBM8s2dtAfa3kEDRR1Q7x7bTfCqrLcXh2WjCuDubxOYDxgeS", -- 10M/s to 100M/s
+    secretLowValue = "https://discord.com/api/webhooks/1420571944901939320/_4eendPWSlqgeNThqRlAQG5JrOcntU3rimQ3OMfQHwOTFMDrSeE6AZInEGpOto6hAOmc", -- Secret rarity < 1M/s
+    mediumValue = "https://discord.com/api/webhooks/1420572218743853076/mn436Nx8jA2kclSJgT25JzQgImM8DV0EG6OaPprHxRqubkZAMynHXIvOdytdDLcuXOgq" -- 1M/s to 10M/s
 }
 
 -- Color palette for rotating embed colors
 local colors = {
-    0x00ff00,
-    0xff6b35,
-    0x9b59b6,
-    0x3498db,
-    0xe74c3c,
-    0xf1c40f,
-    0x1abc9c,
-    0xe67e22,
+    0x00ff00, -- Green
+    0xff6b35, -- Orange
+    0x9b59b6, -- Purple
+    0x3498db, -- Blue
+    0xe74c3c, -- Red
+    0xf1c40f, -- Yellow
+    0x1abc9c, -- Teal
+    0xe67e22  -- Dark Orange
 }
 
 -- Storage for detected brainrots by category
 local detectedBrainrots = {
     highValue = {},
     secretLowValue = {},
-    mediumValue = {},
+    mediumValue = {}
 }
 
--- Parse price strings into numbers
+-- Function to parse price string and convert to numerical value
 local function parsePrice(priceStr)
-    if not priceStr then
-        return 0
-    end
-    local cleanPrice = priceStr:gsub('^%$', ''):gsub('/s$', '')
+    if not priceStr then return 0 end
+    
+    -- Remove $ and /s at the end
+    local cleanPrice = priceStr:gsub("^%$", ""):gsub("/s$", "")
+    
     local multiplier = 1
-    if cleanPrice:find('K$') then
-        multiplier = 1_000
-        cleanPrice = cleanPrice:gsub('K$', '')
-    elseif cleanPrice:find('M$') then
-        multiplier = 1_000_000
-        cleanPrice = cleanPrice:gsub('M$', '')
-    elseif cleanPrice:find('B$') then
-        multiplier = 1_000_000_000
-        cleanPrice = cleanPrice:gsub('B$', '')
+    if cleanPrice:find("K$") then
+        multiplier = 1000
+        cleanPrice = cleanPrice:gsub("K$", "")
+    elseif cleanPrice:find("M$") then
+        multiplier = 1000000
+        cleanPrice = cleanPrice:gsub("M$", "")
+    elseif cleanPrice:find("B$") then
+        multiplier = 1000000000
+        cleanPrice = cleanPrice:gsub("B$", "")
     end
+    
     local numValue = tonumber(cleanPrice)
     return numValue and (numValue * multiplier) or 0
 end
 
+-- Function to get random color from palette
 local function getRandomColor()
     return colors[math.random(1, #colors)]
 end
 
+-- Function to get player count (excluding local player)
 local function getPlayerCount()
     local count = 0
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= Players.LocalPlayer then
-            count += 1
+            count = count + 1
         end
     end
     return count
 end
 
+-- Function to get max server size
 local function getMaxPlayers()
-    return Players.MaxPlayers or 50
+    return Players.MaxPlayers or 50 -- Default to 50 if not available
 end
 
--- Send embed to Discord
+
+
+-- Function to send category embed with all brainrots
 local function sendCategoryEmbed(webhookUrl, category, brainrots)
-    if #brainrots == 0 then
-        return
-    end
-
-    print(
-        'Sending '
-            .. category
-            .. ' embed with '
-            .. #brainrots
-            .. ' brainrots...'
-    )
+    if #brainrots == 0 then return end
+    
+    print("Sending " .. category .. " embed with " .. #brainrots .. " brainrots...")
+    
     local jobId = game.JobId
-    local joinScript = string.format(
-        'game:GetService("TeleportService"):TeleportToPlaceInstance(109983668079237, "%s", game.Players.LocalPlayer)',
-        jobId
-    )
+    local joinScript = string.format('game:GetService("TeleportService"):TeleportToPlaceInstance(109983668079237, "%s", game.Players.LocalPlayer)', jobId)
+    local playerCount = getPlayerCount()
+    local maxPlayers = getMaxPlayers()
     local totalPlayers = #Players:GetPlayers()
-
+    
+    -- Create title based on category
     local titles = {
-        highValue = '🧠 BRAINROTS DETECTED (' .. #brainrots .. ' Found)',
-        secretLowValue = '🧠 SECRET BRAINROTS DETECTED ('
-            .. #brainrots
-            .. ' Found)',
-        mediumValue = '🧠 BRAINROTS DETECTED (' .. #brainrots .. ' Found)',
+        highValue = "🧠 BRAINROTS DETECTED (" .. #brainrots .. " Found)",
+        secretLowValue = "🧠 SECRET BRAINROTS DETECTED (" .. #brainrots .. " Found)", 
+        mediumValue = "🧠 BRAINROTS DETECTED (" .. #brainrots .. " Found)"
     }
-
+    
+    local fields = {}
+    
+    -- Add detected brainrots section
+    table.insert(fields, {
+        name = "DETECTED BRAINROTS",
+        value = "",
+        inline = false
+    })
+    
+    -- Sort brainrots by value (highest first)
     table.sort(brainrots, function(a, b)
         return a.value > b.value
     end)
-    local fields = {}
-
-    for _, brainrot in ipairs(brainrots) do
-        local rarityEmoji = brainrot.rarity == 'Secret' and '💎'
-            or brainrot.rarity == 'Legendary' and '🔥'
-            or brainrot.rarity == 'Epic' and '⚡'
-            or '🔸'
-        local nameDisplay = brainrot.mutation == 'Gold'
-                and ('**' .. brainrot.displayName .. '**')
-            or (
-                '**'
-                .. brainrot.displayName
-                .. ' ('
-                .. brainrot.mutation
-                .. ')**'
-            )
-        local petInfo = string.format(
-            '%s %s ➜ %s (%s) | Owner: %s',
+    
+    -- Add each brainrot
+    for i, brainrot in ipairs(brainrots) do
+        local rarityEmoji = brainrot.rarity == "Secret" and "💎" or 
+                           brainrot.rarity == "Legendary" and "🔥" or
+                           brainrot.rarity == "Epic" and "⚡" or "🔸"
+        
+        -- Format name with or without mutation
+        local nameDisplay = brainrot.mutation == "Gold" and 
+            string.format("**%s**", brainrot.displayName) or
+            string.format("**%s (%s)**", brainrot.displayName, brainrot.mutation)
+        
+        local petInfo = string.format("%s %s **%s** ➜ **%s**\nOwner: %s", 
             rarityEmoji,
             nameDisplay,
             brainrot.generation,
             brainrot.rarity,
             brainrot.owner
         )
-        table.insert(fields, { name = '', value = petInfo, inline = false })
+        
+        table.insert(fields, {
+            name = "",
+            value = petInfo,
+            inline = false
+        })
     end
-
-    table.insert(fields, { name = '💻 Job ID', value = jobId, inline = true })
+    
+    -- Add Job ID sections
     table.insert(fields, {
-        name = '👥 Players',
-        value = totalPlayers .. '/' .. getMaxPlayers(),
-        inline = true,
+        name = "💻 Job ID (PC)",
+        value = jobId,
+        inline = true
     })
-    local quickJoinUrl = string.format(
-        'https://fern.wtf/joiner?placeId=109983668079237&gameInstanceId=%s',
-        jobId
-    )
+    
     table.insert(fields, {
-        name = '🔗 Quick Join',
-        value = '[Click to Join](' .. quickJoinUrl .. ')',
-        inline = false,
+        name = "📱 Job ID (Mobile)", 
+        value = "```\n" .. jobId .. "\n```",
+        inline = true
     })
+    
     table.insert(fields, {
-        name = '📜 Join Script',
-        value = '```lua\n' .. joinScript .. '\n```',
-        inline = false,
+        name = "👥 Players in game:",
+        value = "```\n" .. totalPlayers .. "/" .. maxPlayers .. "\n```",
+        inline = true
     })
-
+    
+    -- Add Quick Join section
+    local quickJoinUrl = string.format("https://fern.wtf/joiner?placeId=109983668079237&gameInstanceId=%s", jobId)
+    table.insert(fields, {
+        name = "🔗 Quick Join",
+        value = "[Click to Join](" .. quickJoinUrl .. ")",
+        inline = false
+    })
+    
+    -- Add Join Script
+    table.insert(fields, {
+        name = "📜 Join Script",
+        value = "```lua\n" .. joinScript .. "\n```",
+        inline = false
+    })
+    
     local embed = {
-        embeds = {
-            {
-                title = titles[category],
-                color = getRandomColor(),
-                fields = fields,
-                footer = { text = 'GFH Brainrot Logger Notifications 💩' },
-                timestamp = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+        embeds = {{
+            title = titles[category],
+            color = getRandomColor(),
+            fields = fields,
+            footer = {
+                text = "GFH Brainrot Logger Notifications 💩 | https://discord.gg/aVTyZq3hU4"
             },
-        },
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        }}
     }
-
+    
     local data = HttpService:JSONEncode(embed)
-    request({
-        Url = webhookUrl,
-        Method = 'POST',
-        Headers = { ['Content-Type'] = 'application/json' },
-        Body = data,
-    })
+    
+    local success, response = pcall(function()
+        return request({
+            Url = webhookUrl,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = data
+        })
+    end)
+    
+    if success then
+        if response and response.Success then
+            print("✅ Successfully sent " .. category .. " embed to Discord!")
+        else
+            warn("❌ Discord request failed: " .. (response and tostring(response.StatusCode) or "No response"))
+            if response and response.Body then
+                warn("Response body: " .. tostring(response.Body))
+            end
+        end
+    else
+        warn("❌ Error making request: " .. tostring(response))
+    end
 end
 
--- Get plot owner
+-- Function to get plot owner name
 local function getPlotOwner(plot)
-    local sign = plot:FindFirstChild('PlotSign')
-    if not sign then
-        return 'Unknown'
+    local plotSign = plot:FindFirstChild("PlotSign")
+    if plotSign then
+        local surfaceGui = plotSign:FindFirstChild("SurfaceGui")
+        if surfaceGui then
+            local frame = surfaceGui:FindFirstChild("Frame")
+            if frame then
+                local textLabel = frame:FindFirstChild("TextLabel")
+                if textLabel then
+                    local fullText = textLabel.Text
+                    -- Extract name from "playername's Base" format and clean it
+                    local ownerName = fullText:match("(.+)'s [Bb]ase")
+                    return ownerName or "Unknown"
+                end
+            end
+        end
     end
-    local gui = sign:FindFirstChild('SurfaceGui')
-    if not gui then
-        return 'Unknown'
-    end
-    local frame = gui:FindFirstChild('Frame')
-    if not frame then
-        return 'Unknown'
-    end
-    local textLabel = frame:FindFirstChild('TextLabel')
-    if not textLabel then
-        return 'Unknown'
-    end
-    return textLabel.Text:match("(.+)'s [Bb]ase") or 'Unknown'
+    return "Unknown"
 end
 
--- Check animals on podiums
+-- Function to check and process animal data
 local function checkAnimal(animalOverhead, plotId, podiumNumber, plot)
-    local displayName = animalOverhead:FindFirstChild('DisplayName')
-    local mutation = animalOverhead:FindFirstChild('Mutation')
-    local generationLabel = animalOverhead:FindFirstChild('Generation')
-    local rarity = animalOverhead:FindFirstChild('Rarity')
-    if not (displayName and mutation and generationLabel and rarity) then
-        return
+    if not animalOverhead then return end
+    
+    local displayName = animalOverhead:FindFirstChild("DisplayName")
+    local mutation = animalOverhead:FindFirstChild("Mutation")
+    local generationLabel = animalOverhead:FindFirstChild("Generation")
+    local rarity = animalOverhead:FindFirstChild("Rarity")
+    
+    if not (displayName and mutation and generationLabel and rarity) then 
+        return 
     end
-
+    
     local displayNameText = displayName.Text
     local mutationText = mutation.Text
     local generationText = generationLabel.Text
     local rarityText = rarity.Text
+    
+    print("Found animal: " .. displayNameText .. " | Generation: " .. generationText .. " | Rarity: " .. rarityText)
+    
     local priceValue = parsePrice(generationText)
     local ownerName = getPlotOwner(plot)
-
+    
+    -- Create brainrot data
     local brainrotData = {
         displayName = displayNameText,
         mutation = mutationText,
@@ -224,110 +319,126 @@ local function checkAnimal(animalOverhead, plotId, podiumNumber, plot)
         rarity = rarityText,
         plotId = plotId,
         value = priceValue,
-        owner = ownerName,
+        owner = ownerName
     }
-
-    if priceValue >= 10_000_000 and priceValue < 100_000_000 then
+    
+    -- Check conditions and add to appropriate category
+    if priceValue >= 10000000 and priceValue < 100000000 then
+        -- 10M/s to 100M/s
         table.insert(detectedBrainrots.highValue, brainrotData)
-    elseif rarityText == 'Secret' and priceValue < 1_000_000 then
+        print("High value brainrot detected: " .. displayNameText .. " - " .. generationText)
+    elseif rarityText == "Secret" and priceValue < 1000000 then
+        -- Secret rarity less than 1M/s
         table.insert(detectedBrainrots.secretLowValue, brainrotData)
-    elseif priceValue >= 1_000_000 and priceValue < 10_000_000 then
+        print("Secret low value brainrot detected: " .. displayNameText .. " - " .. generationText)
+    elseif priceValue >= 1000000 and priceValue < 10000000 then
+        -- 1M/s to 10M/s
         table.insert(detectedBrainrots.mediumValue, brainrotData)
+        print("Medium value brainrot detected: " .. displayNameText .. " - " .. generationText)
     end
 end
 
--- === FIXED SERVER HOPPING ===
-local Servers = 'https://games.roblox.com/v1/games/'
-    .. game.PlaceId
-    .. '/servers/Public?sortOrder=Asc&limit=100'
-local Next = nil
-local visitedServers = {} -- new!
+-- Auto Server Hop System
+local PlaceID = game.PlaceId
+local JobID = game.JobId
+local AllIDs = {}
+local foundAnything = ''
 
-local function ListServers(cursor)
-    local Raw =
-        game:HttpGet(Servers .. ((cursor and '&cursor=' .. cursor) or ''))
-    return HttpService:JSONDecode(Raw)
-end
-
-function smartServerHop()
-    print('🔎 Searching for available servers...')
-    while true do
-        local success, serverData = pcall(ListServers, Next)
-        if not success or not serverData or not serverData.data then
-            print('⚠️ Failed to get server list, retrying...')
-            Next = nil
-            wait(5)
-        else
-            for _, server in ipairs(serverData.data) do
-                if
-                    server.id ~= game.JobId
-                    and not visitedServers[server.id]
-                    and server.playing < server.maxPlayers
-                then
-                    visitedServers[server.id] = true -- mark as visited
-                    print(
-                        '✅ Hopping to: '
-                            .. server.id
-                            .. ' ('
-                            .. server.playing
-                            .. '/'
-                            .. server.maxPlayers
-                            .. ')'
-                    )
-                    TeleportService:TeleportToPlaceInstance(
-                        game.PlaceId,
-                        server.id,
-                        Players.LocalPlayer
-                    )
-                    return true
+-- Store servers visited
+function TPReturner()
+    local Site
+    if foundAnything == '' then
+        Site = game.HttpService:JSONDecode(
+            game:HttpGet(
+                'https://games.roblox.com/v1/games/'
+                    .. PlaceID
+                    .. '/servers/Public?sortOrder=Asc&limit=100'
+            )
+        )
+    else
+        Site = game.HttpService:JSONDecode(
+            game:HttpGet(
+                'https://games.roblox.com/v1/games/'
+                    .. PlaceID
+                    .. '/servers/Public?sortOrder=Asc&limit=100&cursor='
+                    .. foundAnything
+            )
+        )
+    end
+    local Servers = Site.data
+    for i, v in pairs(Servers) do
+        if type(v) == 'table' and v.id ~= JobID then
+            local possible = true
+            for _, Existing in pairs(AllIDs) do
+                if v.id == Existing then
+                    possible = false
                 end
             end
-            Next = serverData.nextPageCursor
-            if not Next then
-                print('♻️ All servers checked, restarting from page 1...')
-                Next = nil
-                wait(5)
+            if possible then
+                table.insert(AllIDs, v.id)
+                -- Teleport even if server is full
+                print("Teleporting to server: " .. v.id .. " (" .. v.playing .. "/" .. v.maxPlayers .. " players)")
+                TeleportService:TeleportToPlaceInstance(
+                    PlaceID,
+                    v.id,
+                    Players.LocalPlayer
+                )
+                wait(2)
             end
         end
-        wait(1)
+    end
+    if
+        Site.nextPageCursor
+        and Site.nextPageCursor ~= 'null'
+        and Site.nextPageCursor ~= nil
+    then
+        foundAnything = Site.nextPageCursor
+        TPReturner()
     end
 end
 
--- Scan all plots
+-- Function to initiate server hop
+function smartServerHop()
+    print("Starting auto server hop...")
+    TPReturner()
+    return true
+end
+
+-- Main function to scan all plots
 local function scanAllPlots()
-    local plots = workspace:FindFirstChild('Plots')
+    local plots = workspace:FindFirstChild("Plots")
     if not plots then
+        warn("Plots folder not found in workspace")
         return
     end
-
-    detectedBrainrots.highValue, detectedBrainrots.secretLowValue, detectedBrainrots.mediumValue =
-        {}, {}, {}
-
+    
+    print("Starting brainrot scan...")
+    
+    -- Clear previous results
+    detectedBrainrots.highValue = {}
+    detectedBrainrots.secretLowValue = {}
+    detectedBrainrots.mediumValue = {}
+    
     for _, plot in pairs(plots:GetChildren()) do
-        if plot:IsA('Model') then
-            local animalPodiums = plot:FindFirstChild('AnimalPodiums')
+        if plot:IsA("Model") then
+            local plotId = plot.Name
+            print("Scanning plot: " .. plotId)
+            
+            local animalPodiums = plot:FindFirstChild("AnimalPodiums")
             if animalPodiums then
+                -- Find the highest numbered podium (up to 28)
                 for i = 1, 28 do
                     local podium = animalPodiums:FindFirstChild(tostring(i))
                     if podium then
-                        local base = podium:FindFirstChild('Base')
+                        local base = podium:FindFirstChild("Base")
                         if base then
-                            local spawn = base:FindFirstChild('Spawn')
+                            local spawn = base:FindFirstChild("Spawn")
                             if spawn then
-                                local attachment =
-                                    spawn:FindFirstChild('Attachment')
+                                local attachment = spawn:FindFirstChild("Attachment")
                                 if attachment then
-                                    local animalOverhead =
-                                        attachment:FindFirstChild(
-                                            'AnimalOverhead'
-                                        )
+                                    local animalOverhead = attachment:FindFirstChild("AnimalOverhead")
                                     if animalOverhead then
-                                        checkAnimal(
-                                            animalOverhead,
-                                            plot.Name,
-                                            i,
-                                            plot
-                                        )
+                                        checkAnimal(animalOverhead, plotId, i, plot)
                                     end
                                 end
                             end
@@ -337,436 +448,71 @@ local function scanAllPlots()
             end
         end
     end
-
-    local totalFound = #detectedBrainrots.highValue
-        + #detectedBrainrots.secretLowValue
-        + #detectedBrainrots.mediumValue
+    
+    print("Brainrot scan completed!")
+    
+    -- Check if any brainrots were found
+    local totalFound = #detectedBrainrots.highValue + #detectedBrainrots.secretLowValue + #detectedBrainrots.mediumValue
+    
     if totalFound > 0 then
-        sendCategoryEmbed(
-            webhooks.highValue,
-            'highValue',
-            detectedBrainrots.highValue
-        )
+        -- Send category embeds
+        print("Sending Discord embeds...")
+        sendCategoryEmbed(webhooks.highValue, "highValue", detectedBrainrots.highValue)
+        wait(1) -- Small delay between embeds
+        sendCategoryEmbed(webhooks.secretLowValue, "secretLowValue", detectedBrainrots.secretLowValue)
         wait(1)
-        sendCategoryEmbed(
-            webhooks.secretLowValue,
-            'secretLowValue',
-            detectedBrainrots.secretLowValue
-        )
-        wait(1)
-        sendCategoryEmbed(
-            webhooks.mediumValue,
-            'mediumValue',
-            detectedBrainrots.mediumValue
-        )
-        queue_on_teleport(
-            [[ wait(5) loadstring(game:HttpGet("YOUR_SCRIPT_URL"))() ]]
-        )
-        smartServerHop()
+        sendCategoryEmbed(webhooks.mediumValue, "mediumValue", detectedBrainrots.mediumValue)
+        
+        print("All embeds sent!")
+        print("Found " .. totalFound .. " brainrots! Server hopping...")
+        
+        -- Wait a bit before server hopping
+        wait(3)
+        
+        
+        -- Queue script to auto-execute after server hop
+
+        
+        -- Smart server hop
+        local hopSuccess = smartServerHop()
+        if not hopSuccess then
+            print("⚠️ Server hop failed, continuing scan in current server...")
+        end
     else
-        print('No brainrots found, hopping anyway...')
-        queue_on_teleport(
-            [[ wait(5) loadstring(game:HttpGet("YOUR_SCRIPT_URL"))() ]]
-        )
-        smartServerHop()
+        print("No brainrots found, server hopping...")
+        wait(2)
+        
+        -- Queue script to auto-execute after server hop
+
+        
+        -- Smart server hop
+        local hopSuccess = smartServerHop()
+        if not hopSuccess then
+            print("⚠️ Server hop failed, continuing scan in current server...")
+        end
     end
 end
 
--- Continuous scanner
+-- Function to continuously run the scanner with server hopping
 local function continuousScanner()
     while true do
-        local success, err = pcall(scanAllPlots)
+        local success, error = pcall(scanAllPlots)
         if not success then
-            warn('Scan error: ' .. tostring(err))
-        end
-        wait(10)
-    end
-end
-
-continuousScanner()
--- Brainrot Detection and Discord Webhook Script (Client-side)
-local HttpService = game:GetService('HttpService')
-local TeleportService = game:GetService('TeleportService')
-local Players = game:GetService('Players')
-
--- HTTP request function (compatible with most executors)
-local request = syn and syn.request
-    or http and http.request
-    or http_request
-    or fluxus and fluxus.request
-if not request then
-    error(
-        "No HTTP request function found! Make sure you're using a compatible executor."
-    )
-end
-
--- Discord Webhook URLs
-local webhooks = {
-    highValue = 'WEBHOOK1',
-    secretLowValue = 'WEBHOOK2',
-    mediumValue = 'WEBHOOK3',
-}
-
--- Color palette for rotating embed colors
-local colors = {
-    0x00ff00,
-    0xff6b35,
-    0x9b59b6,
-    0x3498db,
-    0xe74c3c,
-    0xf1c40f,
-    0x1abc9c,
-    0xe67e22,
-}
-
--- Storage for detected brainrots by category
-local detectedBrainrots = {
-    highValue = {},
-    secretLowValue = {},
-    mediumValue = {},
-}
-
--- Parse price strings into numbers
-local function parsePrice(priceStr)
-    if not priceStr then
-        return 0
-    end
-    local cleanPrice = priceStr:gsub('^%$', ''):gsub('/s$', '')
-    local multiplier = 1
-    if cleanPrice:find('K$') then
-        multiplier = 1_000
-        cleanPrice = cleanPrice:gsub('K$', '')
-    elseif cleanPrice:find('M$') then
-        multiplier = 1_000_000
-        cleanPrice = cleanPrice:gsub('M$', '')
-    elseif cleanPrice:find('B$') then
-        multiplier = 1_000_000_000
-        cleanPrice = cleanPrice:gsub('B$', '')
-    end
-    local numValue = tonumber(cleanPrice)
-    return numValue and (numValue * multiplier) or 0
-end
-
-local function getRandomColor()
-    return colors[math.random(1, #colors)]
-end
-
-local function getPlayerCount()
-    local count = 0
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= Players.LocalPlayer then
-            count += 1
-        end
-    end
-    return count
-end
-
-local function getMaxPlayers()
-    return Players.MaxPlayers or 50
-end
-
--- Send embed to Discord
-local function sendCategoryEmbed(webhookUrl, category, brainrots)
-    if #brainrots == 0 then
-        return
-    end
-
-    print(
-        'Sending '
-            .. category
-            .. ' embed with '
-            .. #brainrots
-            .. ' brainrots...'
-    )
-    local jobId = game.JobId
-    local joinScript = string.format(
-        'game:GetService("TeleportService"):TeleportToPlaceInstance(109983668079237, "%s", game.Players.LocalPlayer)',
-        jobId
-    )
-    local totalPlayers = #Players:GetPlayers()
-
-    local titles = {
-        highValue = '🧠 BRAINROTS DETECTED (' .. #brainrots .. ' Found)',
-        secretLowValue = '🧠 SECRET BRAINROTS DETECTED ('
-            .. #brainrots
-            .. ' Found)',
-        mediumValue = '🧠 BRAINROTS DETECTED (' .. #brainrots .. ' Found)',
-    }
-
-    table.sort(brainrots, function(a, b)
-        return a.value > b.value
-    end)
-    local fields = {}
-
-    for _, brainrot in ipairs(brainrots) do
-        local rarityEmoji = brainrot.rarity == 'Secret' and '💎'
-            or brainrot.rarity == 'Legendary' and '🔥'
-            or brainrot.rarity == 'Epic' and '⚡'
-            or '🔸'
-        local nameDisplay = brainrot.mutation == 'Gold'
-                and ('**' .. brainrot.displayName .. '**')
-            or (
-                '**'
-                .. brainrot.displayName
-                .. ' ('
-                .. brainrot.mutation
-                .. ')**'
-            )
-        local petInfo = string.format(
-            '%s %s ➜ %s (%s) | Owner: %s',
-            rarityEmoji,
-            nameDisplay,
-            brainrot.generation,
-            brainrot.rarity,
-            brainrot.owner
-        )
-        table.insert(fields, { name = '', value = petInfo, inline = false })
-    end
-
-    table.insert(fields, { name = '💻 Job ID', value = jobId, inline = true })
-    table.insert(fields, {
-        name = '👥 Players',
-        value = totalPlayers .. '/' .. getMaxPlayers(),
-        inline = true,
-    })
-    local quickJoinUrl = string.format(
-        'https://fern.wtf/joiner?placeId=109983668079237&gameInstanceId=%s',
-        jobId
-    )
-    table.insert(fields, {
-        name = '🔗 Quick Join',
-        value = '[Click to Join](' .. quickJoinUrl .. ')',
-        inline = false,
-    })
-    table.insert(fields, {
-        name = '📜 Join Script',
-        value = '```lua\n' .. joinScript .. '\n```',
-        inline = false,
-    })
-
-    local embed = {
-        embeds = {
-            {
-                title = titles[category],
-                color = getRandomColor(),
-                fields = fields,
-                footer = { text = 'GFH Brainrot Logger Notifications 💩' },
-                timestamp = os.date('!%Y-%m-%dT%H:%M:%SZ'),
-            },
-        },
-    }
-
-    local data = HttpService:JSONEncode(embed)
-    request({
-        Url = webhookUrl,
-        Method = 'POST',
-        Headers = { ['Content-Type'] = 'application/json' },
-        Body = data,
-    })
-end
-
--- Get plot owner
-local function getPlotOwner(plot)
-    local sign = plot:FindFirstChild('PlotSign')
-    if not sign then
-        return 'Unknown'
-    end
-    local gui = sign:FindFirstChild('SurfaceGui')
-    if not gui then
-        return 'Unknown'
-    end
-    local frame = gui:FindFirstChild('Frame')
-    if not frame then
-        return 'Unknown'
-    end
-    local textLabel = frame:FindFirstChild('TextLabel')
-    if not textLabel then
-        return 'Unknown'
-    end
-    return textLabel.Text:match("(.+)'s [Bb]ase") or 'Unknown'
-end
-
--- Check animals on podiums
-local function checkAnimal(animalOverhead, plotId, podiumNumber, plot)
-    local displayName = animalOverhead:FindFirstChild('DisplayName')
-    local mutation = animalOverhead:FindFirstChild('Mutation')
-    local generationLabel = animalOverhead:FindFirstChild('Generation')
-    local rarity = animalOverhead:FindFirstChild('Rarity')
-    if not (displayName and mutation and generationLabel and rarity) then
-        return
-    end
-
-    local displayNameText = displayName.Text
-    local mutationText = mutation.Text
-    local generationText = generationLabel.Text
-    local rarityText = rarity.Text
-    local priceValue = parsePrice(generationText)
-    local ownerName = getPlotOwner(plot)
-
-    local brainrotData = {
-        displayName = displayNameText,
-        mutation = mutationText,
-        generation = generationText,
-        rarity = rarityText,
-        plotId = plotId,
-        value = priceValue,
-        owner = ownerName,
-    }
-
-    if priceValue >= 10_000_000 and priceValue < 100_000_000 then
-        table.insert(detectedBrainrots.highValue, brainrotData)
-    elseif rarityText == 'Secret' and priceValue < 1_000_000 then
-        table.insert(detectedBrainrots.secretLowValue, brainrotData)
-    elseif priceValue >= 1_000_000 and priceValue < 10_000_000 then
-        table.insert(detectedBrainrots.mediumValue, brainrotData)
-    end
-end
-
--- === FIXED SERVER HOPPING ===
-local Servers = 'https://games.roblox.com/v1/games/'
-    .. game.PlaceId
-    .. '/servers/Public?sortOrder=Asc&limit=100'
-local Next = nil
-local visitedServers = {} -- new!
-
-local function ListServers(cursor)
-    local Raw =
-        game:HttpGet(Servers .. ((cursor and '&cursor=' .. cursor) or ''))
-    return HttpService:JSONDecode(Raw)
-end
-
-function smartServerHop()
-    print('🔎 Searching for available servers...')
-    while true do
-        local success, serverData = pcall(ListServers, Next)
-        if not success or not serverData or not serverData.data then
-            print('⚠️ Failed to get server list, retrying...')
-            Next = nil
+            warn("Error during scan: " .. tostring(error))
+            print("Retrying in 5 seconds...")
             wait(5)
         else
-            for _, server in ipairs(serverData.data) do
-                if
-                    server.id ~= game.JobId
-                    and not visitedServers[server.id]
-                    and server.playing < server.maxPlayers
-                then
-                    visitedServers[server.id] = true -- mark as visited
-                    print(
-                        '✅ Hopping to: '
-                            .. server.id
-                            .. ' ('
-                            .. server.playing
-                            .. '/'
-                            .. server.maxPlayers
-                            .. ')'
-                    )
-                    TeleportService:TeleportToPlaceInstance(
-                        game.PlaceId,
-                        server.id,
-                        Players.LocalPlayer
-                    )
-                    return true
-                end
-            end
-            Next = serverData.nextPageCursor
-            if not Next then
-                print('♻️ All servers checked, restarting from page 1...')
-                Next = nil
-                wait(5)
-            end
+            print("✅ Scan completed successfully!")
         end
-        wait(1)
-    end
-end
-
--- Scan all plots
-local function scanAllPlots()
-    local plots = workspace:FindFirstChild('Plots')
-    if not plots then
-        return
-    end
-
-    detectedBrainrots.highValue, detectedBrainrots.secretLowValue, detectedBrainrots.mediumValue =
-        {}, {}, {}
-
-    for _, plot in pairs(plots:GetChildren()) do
-        if plot:IsA('Model') then
-            local animalPodiums = plot:FindFirstChild('AnimalPodiums')
-            if animalPodiums then
-                for i = 1, 28 do
-                    local podium = animalPodiums:FindFirstChild(tostring(i))
-                    if podium then
-                        local base = podium:FindFirstChild('Base')
-                        if base then
-                            local spawn = base:FindFirstChild('Spawn')
-                            if spawn then
-                                local attachment =
-                                    spawn:FindFirstChild('Attachment')
-                                if attachment then
-                                    local animalOverhead =
-                                        attachment:FindFirstChild(
-                                            'AnimalOverhead'
-                                        )
-                                    if animalOverhead then
-                                        checkAnimal(
-                                            animalOverhead,
-                                            plot.Name,
-                                            i,
-                                            plot
-                                        )
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    local totalFound = #detectedBrainrots.highValue
-        + #detectedBrainrots.secretLowValue
-        + #detectedBrainrots.mediumValue
-    if totalFound > 0 then
-        sendCategoryEmbed(
-            webhooks.highValue,
-            'highValue',
-            detectedBrainrots.highValue
-        )
-        wait(1)
-        sendCategoryEmbed(
-            webhooks.secretLowValue,
-            'secretLowValue',
-            detectedBrainrots.secretLowValue
-        )
-        wait(1)
-        sendCategoryEmbed(
-            webhooks.mediumValue,
-            'mediumValue',
-            detectedBrainrots.mediumValue
-        )
-        queue_on_teleport(
-            [[ wait(5) loadstring(game:HttpGet("https://raw.githubusercontent.com/pjglizzyoyogz-bot/ewrgpoiej/refs/heads/main/awe2r34t"))() ]]
-        )
-        smartServerHop()
-    else
-        print('No brainrots found, hopping anyway...')
-        queue_on_teleport(
-            [[ wait(5) loadstring(game:HttpGet("https://raw.githubusercontent.com/pjglizzyoyogz-bot/ewrgpoiej/refs/heads/main/awe2r34t"))() ]]
-        )
-        smartServerHop()
-    end
-end
-
--- Continuous scanner
-local function continuousScanner()
-    while true do
-        local success, err = pcall(scanAllPlots)
-        if not success then
-            warn('Scan error: ' .. tostring(err))
-        end
+        
+        -- Always wait before next scan (whether teleport happened or not)
+        print("⏳ Waiting 10 seconds before next scan to avoid rate limits...")
         wait(10)
+        
+        -- Reset server variables for fresh search
+        Server, Next = nil, nil
     end
 end
 
+-- Run the continuous scanner
 continuousScanner()
