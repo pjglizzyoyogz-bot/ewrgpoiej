@@ -337,14 +337,41 @@ function TPReturner()
             if Possible == true then
                 table.insert(AllIDs, ID)
                 wait()
+                local teleportSuccess = false
                 pcall(function()
                     writefile("NotSameServers.json", HttpService:JSONEncode(AllIDs))
                     wait()
-                    print("🚀 Teleporting to server: " .. ID .. " (" .. v.playing .. "/" .. v.maxPlayers .. " players)")
-                    TeleportService:TeleportToPlaceInstance(PlaceID, ID, Players.LocalPlayer)
+                    print("🚀 Attempting teleport to server: " .. ID .. " (" .. v.playing .. "/" .. v.maxPlayers .. " players)")
+                    
+                    -- Try teleport with error handling
+                    local success, error = pcall(function()
+                        TeleportService:TeleportToPlaceInstance(PlaceID, ID, Players.LocalPlayer)
+                    end)
+                    
+                    if success then
+                        print("✅ Teleport initiated successfully!")
+                        teleportSuccess = true
+                    else
+                        warn("❌ Teleport failed: " .. tostring(error))
+                        if string.find(tostring(error):lower(), "full") then
+                            print("🔄 Server is full, trying next server...")
+                        end
+                    end
                 end)
-                wait(4)
-                return true -- Successfully found a server
+                
+                if teleportSuccess then
+                    wait(4)
+                    return true -- Successfully teleported
+                else
+                    -- Remove failed server from list and continue to next server
+                    for j = #AllIDs, 1, -1 do
+                        if AllIDs[j] == ID then
+                            table.remove(AllIDs, j)
+                            break
+                        end
+                    end
+                    print("🔄 Continuing to search for another server...")
+                end
             end
         end
     end
@@ -355,7 +382,7 @@ end
 function smartServerHop()
     print("🔍 Searching for available servers...")
     local attempts = 0
-    local maxAttempts = 5  -- Reduced attempts to not get stuck
+    local maxAttempts = 20  -- Increased attempts to find working servers
     
     while attempts < maxAttempts do
         attempts = attempts + 1
@@ -381,8 +408,14 @@ function smartServerHop()
             end
         end
         
-        print("❌ No suitable server found, retrying in 2 seconds...")
-        wait(2)
+        -- Reset cursor to get fresh servers if we've exhausted current page
+        if attempts % 5 == 0 then
+            print("🔄 Resetting server search to get fresh servers...")
+            foundAnything = ""
+        end
+        
+        print("❌ No suitable server found, retrying in 1 second...")
+        wait(1)
     end
     
     print("⚠️ Could not find suitable server after " .. maxAttempts .. " attempts")
@@ -455,6 +488,8 @@ local function scanAllPlots()
         wait(3)
         
         
+        -- Queue script to auto-execute after server hop
+        
         -- Smart server hop
         local hopSuccess = smartServerHop()
         if not hopSuccess then
@@ -464,7 +499,7 @@ local function scanAllPlots()
         print("No brainrots found, server hopping...")
         wait(2)
         
-        
+        -- Queue script to auto-execute after server hop
         -- Smart server hop
         local hopSuccess = smartServerHop()
         if not hopSuccess then
